@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+# cisconfig - simple cu-based console connector for macOS + Linux
+# Usage: ./cisconfig
+
+set -euo pipefail
+
+# -------- CONFIG --------
+DEFAULT_BAUD=9600
+BAUD_OPTIONS=(9600 19200 38400 57600 115200)
+# ------------------------
+
+print_header() {
+  cat <<'EOF'
+===========================================
+   cisconfig — classroom Cisco console helper
+===========================================
+EOF
+}
+
+detect_os() {
+  unameOut="$(uname -s)"
+  case "${unameOut}" in
+      Darwin*)    OS=macos;;
+      Linux*)     OS=linux;;
+      *)          OS=other;;
+  esac
+}
+
+check_cu() {
+  if ! command -v cu >/dev/null 2>&1; then
+    echo "⚠️  'cu' not found."
+    if [ "$OS" = "macos" ]; then
+      echo "macOS normally ships with cu. If missing, install Command Line Tools or use Homebrew packages providing uucp."
+    else
+      echo "On Linux install package 'uucp' (Debian/Ubuntu: sudo apt install uucp; Fedora: sudo dnf install uucp; Arch: sudo pacman -S uucp)."
+    fi
+    read -p "Press Enter to continue anyway (you can still manually install later) or Ctrl+C to abort..."
+  fi
+}
+
+gather_devices() {
+  devices=()
+  if [ "$OS" = "macos" ]; then
+    # prefer /dev/cu.* for macOS (cu.* are callout devices)
+    for f in /dev/cu.* /dev/tty.*; do
+      [ -e "$f" ] || continue
+      devices+=("$f")
+    done
+  elif [ "$OS" = "linux" ]; then
+    for f in /dev/ttyUSB* /dev/ttyACM* /dev/serial/by-id/*; do
+      [ -e "$f" ] || continue
+      # if by-id entries are symlinks, resolve to absolute path for usage
+      if [ -L "$f" ]; then
+        realpath=$(readlink -f "$f" 2>/dev/null || realpath "$f" 2>/dev/null || echo "$f")
+        devices+=("$realpath")
+      else
+        devices+=("$f")
+      fi
+    done
+  else
+    echo "Unsupported OS: $unameOut"
+  fi
+}
+
+list_devices_menu() {
+  echo
+  echo "Detected console devices:"
+  if [ "${#devices[@]}" -eq 0 ]; then
+    echo "  (none found)"
+  else
+    idx=1
+    for d in "${devices[@]}"; do
+      echo "  $idx) $d"
+      idx=$((idx+1))
+    done
+  fi
+  echo
+  echo "Options:"
+  echo "  m) Manually enter a device path"
+  echo "  r) Refresh device list"
+  echo "  q) Quit"
+}
+
+choose_device() {
+  while true; do
+    list_devices_menu
+    read -p $'\nSelect a device number (or m/r/q): ' choice
+    case "$choice" in
+      r|R)
+        gather_devices
+        ;;
+      m|M)
+        read -p "Enter device path (e.g. /dev/cu.usbserial-1420 or /dev/ttyUSB0): " manual
+        if [ -e "$manual" ]; then
+          SELECTED_DEVICE="$manual"
+          break
+        else
+          echo "⚠️  Path '$manual' does not exist."
+          read -p "Add it anyway? (y/N) " yn
+          if [[ "$yn" =~ ^[Yy]$ ]]; then
+            SELECTED_DEVICE="$manual"
+            break
+          fi
+        fi
+        ;;
+      q|Q)
+        echo "Goodbye."
+        exit 0
+        ;;
+      *)
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "${#devices[@]}" -ge "$choice" ] && [ "$choice" -ge 1 ]; then
+          SELECTED_DEVICE="${devices[$((choice-1))]}"
+          break
+        else
+          echo "Invalid choice."
+        fi
+        ;;
+    esac
+  done
+  echo
+  echo "→ Selected device: $SELECTED_DEVICE"
+}
+
+find_and_kill_procs() {
+  local dev="$1"
+  echo
+  echo "Searching for processes using $dev ..."
+  pids=()
+  # prefer lsof, fallback to fuser
+  if command -v lsof >/dev/null 2>&1; then
+    while IFS= read -r pid; do
+      pids+=("$pid")
+    done < <(lsof -t "$dev" 2>/dev/null || true)
+  elif command -v fuser >/dev/null 2>&1; then
+    while IFS= read -r pid; do
+      pids+=("$pid")
+    done < <(fuser "$dev" 2>/dev/null | tr -s ' ' '\n' | sed '/^$/d' || true)
+  fi
+
+  if [ "${#pids[@]}" -gt 0 ]; then
+    echo "Found processes holding $dev open:"
+    for pid in "${pids[@]}"; do
+      ps -o pid,cmd -p "$pid" 2>/dev/null || echo "  PID $pid"
+    done
+    read -p "Kill these processes? (y/N) " killconfirm
+    if [[ "$killconfirm" =~ ^[Yy]$ ]]; then
+      for pid in "${pids[@]}"; do
+        echo " - killing PID $pid ..."
+        kill "$pid" 2>/dev/null || true
+      done
+      # give them a second, then force kill if still present
+      sleep 0.5
+      for pid in "${pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+      done
+      echo "Done."
+    else
+      echo "Left processes running. If cu cannot open the device, you'll need to stop them."
+    fi
+  else
+    echo "No processes found using $dev."
+  fi
+}
+
+choose_baud() {
+  echo
+  echo "Choose baud rate:"
+  idx=1
+  for b in "${BAUD_OPTIONS[@]}"; do
+    echo "  $idx) $b"
+    idx=$((idx+1))
+  done
+  echo "  c) custom"
+  while true; do
+    read -p "Select option (number or c): " bchoice
+    if [[ "$bchoice" =~ ^[0-9]+$ ]] && [ "$bchoice" -ge 1 ] && [ "$bchoice" -le "${#BAUD_OPTIONS[@]}" ]; then
+      BAUD="${BAUD_OPTIONS[$((bchoice-1))]}"
+      break
+    elif [[ "$bchoice" =~ ^[cC]$ ]]; then
+      read -p "Enter custom baud (e.g. 38400): " custombaud
+      if [[ "$custombaud" =~ ^[0-9]+$ ]]; then
+        BAUD="$custombaud"
+        break
+      else
+        echo "Invalid baud."
+      fi
+    else
+      echo "Invalid choice."
+    fi
+  done
+  echo "→ Selected baud: $BAUD"
+}
+
+choose_frame() {
+  echo
+  echo "Choose framing:"
+  echo "  1) 8N1 (8 data bits, No parity, 1 stop bit) — common default"
+  echo "  2) Custom"
+  while true; do
+    read -p "Select (1 or 2): " fchoice
+    if [ "$fchoice" = "1" ]; then
+      DATA_BITS=8
+      PARITY="N"
+      STOP_BITS=1
+      break
+    elif [ "$fchoice" = "2" ]; then
+      while true; do
+        read -p "Data bits (5,6,7,8): " db
+        if [[ "$db" =~ ^(5|6|7|8)$ ]]; then
+          DATA_BITS="$db"
+          break
+        else
+          echo "Invalid."
+        fi
+      done
+      while true; do
+        read -p "Parity (N=none, E=even, O=odd): " par
+        if [[ "$par" =~ ^(N|E|O|n|e|o)$ ]]; then
+          PARITY="${par^^}"
+          break
+        else
+          echo "Invalid."
+        fi
+      done
+      while true; do
+        read -p "Stop bits (1 or 2): " sb
+        if [[ "$sb" =~ ^(1|2)$ ]]; then
+          STOP_BITS="$sb"
+          break
+        else
+          echo "Invalid."
+        fi
+      done
+      break
+    else
+      echo "Invalid."
+    fi
+  done
+  echo "→ Selected frame: ${DATA_BITS}${PARITY}${STOP_BITS}"
+}
+
+apply_stty() {
+  local dev="$1"
+  local baud="$2"
+  local data="$3"
+  local parity="$4"
+  local stop="$5"
+  echo
+  echo "Configuring port with stty..."
+
+  # Build stty options
+  stty_args=()
+  stty_args+=("$baud")
+  # data bits
+  case "$data" in
+    5) stty_args+=(cs5) ;;
+    6) stty_args+=(cs6) ;;
+    7) stty_args+=(cs7) ;;
+    8) stty_args+=(cs8) ;;
+  esac
+  # parity
+  case "$parity" in
+    N) stty_args+=(-parenb) ;;   # disable parity
+    E) stty_args+=(parenb -parodd) ;; # even parity (parodd off)
+    O) stty_args+=(parenb parodd) ;;  # odd parity
+  esac
+  # stop bits: stty option cstopb = 2 stop bits when set; we want -cstopb for 1 stop bit
+  if [ "$stop" = "1" ]; then
+    stty_args+=(-cstopb)
+  else
+    stty_args+=(cstopb)
+  fi
+
+  if [ "$OS" = "macos" ]; then
+    # macOS variant uses -f to target device
+    if ! stty -f "$dev" "${stty_args[@]}"; then
+      echo "⚠️  Failed to set terminal attributes with stty -f. You may still be able to connect."
+    fi
+  else
+    # linux: use -F if available
+    if stty -F "$dev" "${stty_args[@]}" 2>/dev/null; then
+      :
+    else
+      # fallback: try using stty via < "$dev" (some systems allow this)
+      if ! ( stty "${stty_args[@]}" <"$dev" ) 2>/dev/null; then
+        echo "⚠️  Failed to set terminal attributes with stty -F or redirect. You may still be able to connect."
+      fi
+    fi
+  fi
+  echo "Port configured (requested: ${baud} ${data}${parity}${stop})."
+}
+
+show_disconnect_help() {
+  echo
+  cat <<EOF
+How to disconnect / stop the console session:
+
+ - cu escape: type ~.  (tilde followed by a dot) at the start of a new line, then Enter.
+   Example: press Enter, then type: ~. and press Enter.
+ - If that doesn't work, open a new terminal and kill the cu process.
+ - Common note: don't send ~. while it is part of the command you're typing on the device.
+
+Press Enter to continue to the console session (starting cu).
+EOF
+  read -r _
+}
+
+main() {
+  print_header
+  detect_os
+  echo "Welcome to cisconfig."
+  echo
+  echo "Select platform:"
+  echo "  1) macOS"
+  echo "  2) Linux"
+  while true; do
+    read -p "Platform (1 or 2): " platform_choice
+    case "$platform_choice" in
+      1) OS=macos; break;;
+      2) OS=linux; break;;
+      *) echo "Choose 1 or 2.";;
+    esac
+  done
+
+  check_cu
+
+  gather_devices
+
+  choose_device
+
+  # ensure device exists (or user knowingly entered a non-existing path)
+  if [ ! -e "$SELECTED_DEVICE" ]; then
+    echo "Note: $SELECTED_DEVICE does not currently exist. Proceeding anyway (user provided)."
+  fi
+
+  find_and_kill_procs "$SELECTED_DEVICE"
+
+  choose_baud
+
+  choose_frame
+
+  echo
+  echo "Confirm connection settings:"
+  echo "  Device: $SELECTED_DEVICE"
+  echo "  Baud:   $BAUD"
+  echo "  Frame:  ${DATA_BITS}${PARITY}${STOP_BITS}"
+  read -p "Connect now? (Y/n) " confirm
+  if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    echo "Aborting."
+    exit 0
+  fi
+
+  apply_stty "$SELECTED_DEVICE" "$BAUD" "$DATA_BITS" "$PARITY" "$STOP_BITS"
+
+  show_disconnect_help
+
+  echo "Launching cu..."
+  # run cu. On macOS & Linux cu syntax: cu -l device -s speed
+  # Use exec so the shell is replaced by cu; user returns once cu exits.
+  exec cu -l "$SELECTED_DEVICE" -s "$BAUD"
+}
+
+# Run
+main
