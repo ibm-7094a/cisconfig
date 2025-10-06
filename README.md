@@ -43,9 +43,10 @@ sudo chmod +x /usr/local/bin/cisconfig
 ```
 
 Now you can run it anywhere:
+(Note that you need root access!)
 
 ```bash
-cisconfig
+sudo cisconfig
 ```
 
 > 💡 On Apple Silicon Macs, if `/usr/local/bin` doesn’t exist, you can install to `/opt/homebrew/bin` instead.
