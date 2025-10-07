@@ -36,12 +36,27 @@
 - Optional: `lsof` or `fuser` for process detection
 
 ---
-
 ## ⚙️ Installation
 
-Choose your installer based on your system architecture.
+Choose the installer that matches your system:
 
-### macOS (Intel)
-```bash
-curl -L https://raw.githubusercontent.com/<yourusername>/cisconfig/main/install_mac_intel.sh -o install_mac_intel.sh
+### 🧱 macOS (Intel)
+```
+curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_mac_intel.sh -o install_mac_intel.sh
 sudo bash install_mac_intel.sh
+```
+```
+🍎 macOS (Apple Silicon)
+curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_mac_arm.sh -o install_mac_arm.sh
+sudo bash install_mac_arm.sh
+```
+```
+🐧 Linux
+curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_linux.sh -o install_linux.sh
+sudo bash install_linux.sh
+```
+Once installed, run:
+```
+sudo cisconfig
+```
+and follow the on-screen prompts to connect to your Cisco device.
