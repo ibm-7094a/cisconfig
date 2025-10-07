@@ -214,7 +214,3 @@ cisconfig simply automates this routine to save time — but the underlying proc
 ```
 Find device → Clear lock → Set speed → Connect → Exit cleanly
 ```
-
-That’s the complete file — exactly how it should appear in your repo as `README_cu_manual.md`.  
-Would you like me to generate a version with syntax-highlighted terminal snippets for print/export (like a stylized PDF or classroom handout)?
-```
