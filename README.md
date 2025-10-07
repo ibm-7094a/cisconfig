@@ -45,13 +45,13 @@ Choose the installer that matches your system:
 curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_mac_intel.sh -o install_mac_intel.sh
 sudo bash install_mac_intel.sh
 ```
-```
 🍎 macOS (Apple Silicon)
+```
 curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_mac_arm.sh -o install_mac_arm.sh
 sudo bash install_mac_arm.sh
 ```
-```
 🐧 Linux
+```
 curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/install_linux.sh -o install_linux.sh
 sudo bash install_linux.sh
 ```
