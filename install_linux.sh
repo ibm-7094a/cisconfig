@@ -12,7 +12,7 @@ echo "🐧 Installing cisconfig for Linux..."
 sudo mkdir -p "$INSTALL_PATH"
 
 # Download latest version of the script
-curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/cisconfig.sh -o cisconfig
+curl -L https://raw.githubusercontent.com/ibm-7094a/cisconfig/main/cisconfig -o cisconfig
 
 # Move and set permissions
 sudo mv cisconfig "$INSTALL_PATH"/cisconfig
