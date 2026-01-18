@@ -18,8 +18,6 @@ if ! command -v curl >/dev/null; then
   exit 1
 fi
 
-install_deps
-
 # --- Download binary once ---
 TMP_FILE="$(mktemp)"
 echo "⬇️  Downloading cisconfig binary..."
