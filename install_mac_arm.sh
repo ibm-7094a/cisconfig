@@ -13,18 +13,10 @@ INSTALL_PATHS=(
 
 echo "🍎 Installing cisconfig for macOS (Apple Silicon)..."
 
-# --- Dependency installation ---
-install_deps() {
-    if command -v brew >/dev/null 2>&1; then
-        echo "🍺 Homebrew detected — ensuring curl is installed..."
-        brew install curl || true
-    elif command -v port >/dev/null 2>&1; then
-        echo "🔧 MacPorts detected — ensuring curl is installed..."
-        sudo port install curl
-    else
-        echo "⚠️  No package manager detected. Ensure curl is installed manually." >&2
-    fi
-}
+if ! command -v curl >/dev/null; then
+  echo "Please install curl using Homebrew or MacPorts"
+  exit 1
+fi
 
 install_deps
 
