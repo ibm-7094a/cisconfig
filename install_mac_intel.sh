@@ -10,13 +10,9 @@ DOWNLOAD_URL="https://github.com/ibm-7094a/cisconfig/releases/download/release/c
 
 echo "🧱 Installing cisconfig for macOS (Intel)..."
 
-# Install dependencies
-if command -v brew >/dev/null 2>&1; then
-    brew install curl || true
-elif command -v port >/dev/null 2>&1; then
-    sudo port install curl
-else
-    echo "⚠️  No package manager detected. Ensure curl is installed." >&2
+if ! command -v curl >/dev/null; then
+  echo "Please install curl using Homebrew or MacPorts"
+  exit 1
 fi
 
 # Ensure directory exists
