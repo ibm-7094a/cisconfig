@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # cisconfig installer for macOS (Apple Silicon)
-# Installs cisconfig into /opt/local/bin (MacPorts default path for ARM Macs)
+# Installs cisconfig into /opt/local/bin and /usr/local/bin
 
 set -euo pipefail
 
-INSTALL_PATH="/opt/local/bin"
 BINARY_NAME="cisconfig"
 DOWNLOAD_URL="https://github.com/ibm-7094a/cisconfig/releases/download/release/cisconfig"
+INSTALL_PATHS=(
+    "/opt/local/bin"
+    "/usr/local/bin"
+)
 
 echo "🍎 Installing cisconfig for macOS (Apple Silicon)..."
 
@@ -25,10 +28,7 @@ install_deps() {
 
 install_deps
 
-# --- Ensure install directory exists ---
-sudo mkdir -p "$INSTALL_PATH"
-
-# --- Download binary safely ---
+# --- Download binary once ---
 TMP_FILE="$(mktemp)"
 echo "⬇️  Downloading cisconfig binary..."
 
@@ -38,9 +38,25 @@ if ! curl -fSL "$DOWNLOAD_URL" -o "$TMP_FILE"; then
     exit 1
 fi
 
-# --- Install binary ---
-sudo mv "$TMP_FILE" "$INSTALL_PATH/$BINARY_NAME"
-sudo chmod +x "$INSTALL_PATH/$BINARY_NAME"
+chmod +x "$TMP_FILE"
 
-echo "✅ cisconfig installed successfully to $INSTALL_PATH"
-echo "➡️  Run it with: sudo cisconfig"
+INSTALLED=false
+
+# --- Install to each target path ---
+for INSTALL_PATH in "${INSTALL_PATHS[@]}"; do
+    echo "📦 Installing to $INSTALL_PATH..."
+    sudo mkdir -p "$INSTALL_PATH"
+    sudo cp "$TMP_FILE" "$INSTALL_PATH/$BINARY_NAME"
+    sudo chmod +x "$INSTALL_PATH/$BINARY_NAME"
+    INSTALLED=true
+done
+
+rm -f "$TMP_FILE"
+
+if [[ "$INSTALLED" != true ]]; then
+    echo "❌ ERROR: Installation failed — no valid install paths found." >&2
+    exit 1
+fi
+
+echo "✅ cisconfig installed successfully!"
+echo "➡️  You can run it with: sudo cisconfig"
